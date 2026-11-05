@@ -167,6 +167,8 @@ const APPS = [
   { id:"travel",   icon:"🚗", short:"Travel",  name:"RCM and MRCFI Travel Logs",desc:"Travel logs for RCM and MRCFI.",                     url:"https://rotaryclubofmakati.github.io/TravelLog/" },
   { id:"errands",  icon:"📝", short:"Errands", name:"RCM Errands Travel Log",   desc:"Travel log for club errands.",                       url:"https://rotaryclubofmakati.github.io/ErrandsTravelLog/" },
   { id:"wine", auth:true, edit:true, icon:"🍷", short:"Wine",    name:"RCM Wine Inventory",       desc:"Track and manage the club's wine inventory.",        url:"https://rotaryclubofmakati.github.io/Wine-Inventory/" },
+  { id:"bats", auth:true, icon:"📚", short:"BATS",    name:"BATS – Books Across the Seas", desc:"Book inventory, requests, approvals and releases.", url:"https://rotaryclubofmakati.github.io/BATS/",
+    roles:[["supervisor","Supervisor"],["warehouse","Warehouse Staff"]], requestLink:"?view=request" },   // <-- set url to your BATS page
   { id:"rotmaksec",icon:"✅", short:"RotMak",  name:"RotMakSec Portal",         desc:"RotMakSec task manager and dashboard.",              url:"https://rotmaksec-task-manager.web.app/dashboard" }
 ];
 /* ================================================================================ */
@@ -227,7 +229,7 @@ const signOut = () => { try{ google.accounts.id.disableAutoSelect(); }catch(_){}
 $("#signout").onclick = signOut;
 $("#meOut").onclick = signOut;
 
-const myApps = () => me.role === "admin" ? APPS : APPS.filter(a => me.apps.includes(a.id) || me.apps.includes(a.id + ":edit"));
+const myApps = () => me.role === "admin" ? APPS : APPS.filter(a => me.apps.includes(a.id) || me.apps.includes(a.id + ":edit") || me.apps.some(x => x.startsWith(a.id + ":")));
 
 /* keep "can restock" and "can view" consistent: restock needs view, no view = no restock */
 const fixApps = (apps, changed, on) => {
@@ -239,7 +241,12 @@ const fixApps = (apps, changed, on) => {
   });
   return [...s];
 };
-const appBoxes = u => APPS.map(a =>
+const roleSel = (a, apps) => {
+  const cur = (apps.find(x => x.startsWith(a.id + ":")) || "").split(":")[1] || "";
+  return `<label class="editbox">${esc(a.short)}: <select data-role-app="${a.id}"><option value="">No access</option>${
+    a.roles.map(r => `<option value="${r[0]}" ${cur===r[0]?'selected':''}>${r[1]}</option>`).join("")}</select></label>`;
+};
+const appBoxes = u => APPS.map(a => a.roles ? roleSel(a, u.apps) :
   `<label><input type="checkbox" data-app="${a.id}" ${u.apps.includes(a.id)?'checked':''}> ${esc(a.name.replace('RCM and ','').replace('RCM ',''))}</label>` +
   (a.edit ? `<label class="editbox"><input type="checkbox" data-app="${a.id}:edit" ${u.apps.includes(a.id+':edit')?'checked':''}> ✏️ can restock</label>` : "")
 ).join("");
@@ -258,7 +265,13 @@ function go(t){
   if (t === "admin" && me.role === "admin") return renderAdmin(main);
   const a = APPS.find(x => x.id === t);
   if (!a || !myApps().includes(a)) return renderHome(main);
-  main.innerHTML = `<div class="frame"><div class="bar"><span>${esc(a.name)}</span>${a.auth ? "" : `<a href="${a.url}" target="_blank" rel="noopener">Open in new tab ↗</a>`}</div><iframe src="${a.url}" title="${esc(a.name)}" allow="clipboard-write; fullscreen"></iframe></div>`;
+  main.innerHTML = `<div class="frame"><div class="bar"><span>${esc(a.name)}</span>${a.requestLink ? `<button class="btn sm ghost" id="copyReq">🔗 Copy request link</button>` : ""}${a.auth ? "" : `<a href="${a.url}" target="_blank" rel="noopener">Open in new tab ↗</a>`}</div><iframe src="${a.url}" title="${esc(a.name)}" allow="clipboard-write; fullscreen"></iframe></div>`;
+  const cb = $("#copyReq");
+  if (cb) cb.onclick = async () => {
+    const link = a.url.split("?")[0] + a.requestLink;
+    try { await navigator.clipboard.writeText(link); toast("Request link copied – send it to anyone who needs books"); }
+    catch(_) { prompt("Copy this request link:", link); }
+  };
 }
 
 function renderHome(main){
@@ -282,13 +295,15 @@ function renderAdmin(main){
         <select id="newRole"><option value="member">Member</option><option value="admin">Admin</option></select>
         <button class="btn" id="addBtn">Add user</button>
       </div>
-      <div class="chk" id="newApps">${APPS.map(a=>`<label><input type="checkbox" value="${a.id}" checked> ${esc(a.name)}</label>` + (a.edit ? `<label class="editbox"><input type="checkbox" value="${a.id}:edit"> ✏️ can restock</label>` : "")).join("")}</div>
+      <div class="chk" id="newApps">${APPS.map(a=>a.roles ? roleSel(a, []) : `<label><input type="checkbox" value="${a.id}" checked> ${esc(a.name)}</label>` + (a.edit ? `<label class="editbox"><input type="checkbox" value="${a.id}:edit"> ✏️ can restock</label>` : "")).join("")}</div>
+      <p class="note">For <b>BATS</b>, choose a role: <b>Supervisor</b> (approves requests) or <b>Warehouse Staff</b> (prepares and releases books). Admins have full BATS access.</p>
       <p class="note">Only Google accounts on this list can sign in. Admins can open every system and manage this list.<br>✏️ <b>Can restock</b> (Wine Inventory): the account can receive stock, create events and enter usage, and its email is recorded on everything it does. Without it the account can only view and print. Deleting is for admins only.</p>
     </div>
     <div class="panel"><h3>Authorized users</h3><div id="userTable">Loading…</div></div></div>`;
   $("#addBtn").onclick = async () => {
     const email = $("#newEmail").value.trim().toLowerCase();
-    const apps = fixApps([...$("#newApps").querySelectorAll("input:checked")].map(i=>i.value));
+    const apps = fixApps([...$("#newApps").querySelectorAll("input:checked")].map(i=>i.value))
+      .concat([...$("#newApps").querySelectorAll("select[data-role-app]")].filter(x=>x.value).map(x=>x.dataset.roleApp+":"+x.value));
     $("#addBtn").disabled = true;
     if (await adminCall("add", {email, role:$("#newRole").value, apps}, "User added")) { $("#newEmail").value=""; loadUsers(); }
     $("#addBtn").disabled = false;
@@ -324,9 +339,10 @@ async function loadUsers(){
       if (b.dataset.act==="del"){ if(!confirm("Remove "+email+"?")) return; ok = await adminCall("remove",{email},"Removed"); }
       if (ok) loadUsers();
     });
-    tr.querySelectorAll("[data-app]").forEach(c=>c.onchange = async () => {
+    tr.querySelectorAll("[data-app],[data-role-app]").forEach(c=>c.onchange = async () => {
       const raw = [...tr.querySelectorAll("[data-app]:checked")].map(i=>i.dataset.app);
-      const apps = fixApps(raw, c.dataset.app, c.checked);
+      const roleApps = [...tr.querySelectorAll("select[data-role-app]")].filter(x=>x.value).map(x=>x.dataset.roleApp+":"+x.value);
+      const apps = fixApps(raw, c.dataset.app, c.checked).concat(roleApps);
       if (await adminCall("update",{email,apps},"Access updated")) loadUsers();
     });
   });
