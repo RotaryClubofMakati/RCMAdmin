@@ -79,6 +79,7 @@
   .tag.on{background:#e3f6ec;color:var(--green)}.tag.off{background:#fdecea;color:var(--red)}
   .apps-cell{display:flex;gap:10px;flex-wrap:wrap;font-size:12px}
   .apps-cell label{display:flex;gap:3px;align-items:center}
+  .editbox{color:var(--blue);font-weight:600}
   .note{color:var(--mut);font-size:13px;margin-top:8px}
   #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2433;color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:99;max-width:90vw;text-align:center}
   #toast.show{opacity:1}
@@ -165,7 +166,7 @@ const APPS = [
   { id:"nametag",  icon:"🏷️", short:"Tags",    name:"RCM Name Tag Maker",       desc:"Create and print member and guest name tags.",       url:"https://rotaryclubofmakati.github.io/Name-Tag-Maker/" },
   { id:"travel",   icon:"🚗", short:"Travel",  name:"RCM and MRCFI Travel Logs",desc:"Travel logs for RCM and MRCFI.",                     url:"https://rotaryclubofmakati.github.io/TravelLog/" },
   { id:"errands",  icon:"📝", short:"Errands", name:"RCM Errands Travel Log",   desc:"Travel log for club errands.",                       url:"https://rotaryclubofmakati.github.io/ErrandsTravelLog/" },
-  { id:"wine",     icon:"🍷", short:"Wine",    name:"RCM Wine Inventory",       desc:"Track and manage the club's wine inventory.",        url:"https://rotaryclubofmakati.github.io/Wine-Inventory/" },
+  { id:"wine", auth:true, edit:true, icon:"🍷", short:"Wine",    name:"RCM Wine Inventory",       desc:"Track and manage the club's wine inventory.",        url:"https://rotaryclubofmakati.github.io/Wine-Inventory/" },
   { id:"rotmaksec",icon:"✅", short:"RotMak",  name:"RotMakSec Portal",         desc:"RotMakSec task manager and dashboard.",              url:"https://rotmaksec-task-manager.web.app/dashboard" }
 ];
 /* ================================================================================ */
@@ -179,6 +180,7 @@ const ERR = {not_authorized:"This Google account is not authorized. Please ask a
 
 let token = sessionStorage.getItem("rcm_token") || "";
 let me = null;
+let refreshTimer = null;
 
 async function api(action, data = {}) {
   const r = await fetch(API_URL, { method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
@@ -189,7 +191,7 @@ async function api(action, data = {}) {
 }
 
 function showLogin(msg){
-  me = null; token = ""; sessionStorage.removeItem("rcm_token");
+  me = null; token = ""; sessionStorage.removeItem("rcm_token"); clearTimeout(refreshTimer);
   $("#app").classList.add("hidden"); $("#login").classList.remove("hidden");
   $("#busy").classList.add("hidden"); $("#gbtn").classList.remove("hidden");
   $("#loginErr").textContent = msg || "";
@@ -203,7 +205,7 @@ async function enter(){
     $("#meName").textContent = me.name || me.email;
     $("#meRole").textContent = me.role === "admin" ? "Administrator" : "Member";
     $("#mePic").src = me.picture || "";
-    buildNav(); go("home");
+    buildNav(); go("home"); scheduleRefresh();
     $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
   } catch(e) { showLogin(e.message.includes("fetch") ? "Cannot reach the server. Check the API_URL and deployment." : e.message); }
 }
@@ -212,7 +214,11 @@ window.addEventListener("load", () => {
   const wait = setInterval(() => {
     if (!window.google || !google.accounts) return;
     clearInterval(wait);
-    google.accounts.id.initialize({ client_id: CLIENT_ID, callback: r => { token = r.credential; sessionStorage.setItem("rcm_token", token); enter(); } });
+    google.accounts.id.initialize({ client_id: CLIENT_ID, auto_select: true, callback: r => {
+      token = r.credential; sessionStorage.setItem("rcm_token", token);
+      if (me) { scheduleRefresh(); sendTokenToFrame($("#main iframe")); }   // silent refresh while working
+      else enter();
+    } });
     google.accounts.id.renderButton($("#gbtn"), { theme:"outline", size:"large", text:"signin_with", shape:"rectangular" });
     if (token) enter();
   }, 100);
@@ -221,7 +227,22 @@ const signOut = () => { try{ google.accounts.id.disableAutoSelect(); }catch(_){}
 $("#signout").onclick = signOut;
 $("#meOut").onclick = signOut;
 
-const myApps = () => me.role === "admin" ? APPS : APPS.filter(a => me.apps.includes(a.id));
+const myApps = () => me.role === "admin" ? APPS : APPS.filter(a => me.apps.includes(a.id) || me.apps.includes(a.id + ":edit"));
+
+/* keep "can restock" and "can view" consistent: restock needs view, no view = no restock */
+const fixApps = (apps, changed, on) => {
+  const s = new Set(apps);
+  APPS.filter(a => a.edit).forEach(a => {
+    const e = a.id + ":edit";
+    if (s.has(e) && !s.has(a.id) && !(changed === a.id && !on)) s.add(a.id);
+    if (!s.has(a.id)) s.delete(e);
+  });
+  return [...s];
+};
+const appBoxes = u => APPS.map(a =>
+  `<label><input type="checkbox" data-app="${a.id}" ${u.apps.includes(a.id)?'checked':''}> ${esc(a.name.replace('RCM and ','').replace('RCM ',''))}</label>` +
+  (a.edit ? `<label class="editbox"><input type="checkbox" data-app="${a.id}:edit" ${u.apps.includes(a.id+':edit')?'checked':''}> ✏️ can restock</label>` : "")
+).join("");
 
 function buildNav(){
   const items = [{id:"home",name:"Home",short:"Home",icon:"🏠"}, ...myApps()];
@@ -237,7 +258,7 @@ function go(t){
   if (t === "admin" && me.role === "admin") return renderAdmin(main);
   const a = APPS.find(x => x.id === t);
   if (!a || !myApps().includes(a)) return renderHome(main);
-  main.innerHTML = `<div class="frame"><div class="bar"><span>${esc(a.name)}</span><a href="${a.url}" target="_blank" rel="noopener">Open in new tab ↗</a></div><iframe src="${a.url}" title="${esc(a.name)}" allow="clipboard-write; fullscreen"></iframe></div>`;
+  main.innerHTML = `<div class="frame"><div class="bar"><span>${esc(a.name)}</span>${a.auth ? "" : `<a href="${a.url}" target="_blank" rel="noopener">Open in new tab ↗</a>`}</div><iframe src="${a.url}" title="${esc(a.name)}" allow="clipboard-write; fullscreen"></iframe></div>`;
 }
 
 function renderHome(main){
@@ -261,13 +282,13 @@ function renderAdmin(main){
         <select id="newRole"><option value="member">Member</option><option value="admin">Admin</option></select>
         <button class="btn" id="addBtn">Add user</button>
       </div>
-      <div class="chk" id="newApps">${APPS.map(a=>`<label><input type="checkbox" value="${a.id}" checked> ${esc(a.name)}</label>`).join("")}</div>
-      <p class="note">Only Google accounts on this list can sign in. Admins can open every system and manage this list.</p>
+      <div class="chk" id="newApps">${APPS.map(a=>`<label><input type="checkbox" value="${a.id}" checked> ${esc(a.name)}</label>` + (a.edit ? `<label class="editbox"><input type="checkbox" value="${a.id}:edit"> ✏️ can restock</label>` : "")).join("")}</div>
+      <p class="note">Only Google accounts on this list can sign in. Admins can open every system and manage this list.<br>✏️ <b>Can restock</b> (Wine Inventory): the account can receive stock, create events and enter usage, and its email is recorded on everything it does. Without it the account can only view and print. Deleting is for admins only.</p>
     </div>
     <div class="panel"><h3>Authorized users</h3><div id="userTable">Loading…</div></div></div>`;
   $("#addBtn").onclick = async () => {
     const email = $("#newEmail").value.trim().toLowerCase();
-    const apps = [...$("#newApps").querySelectorAll("input:checked")].map(i=>i.value);
+    const apps = fixApps([...$("#newApps").querySelectorAll("input:checked")].map(i=>i.value));
     $("#addBtn").disabled = true;
     if (await adminCall("add", {email, role:$("#newRole").value, apps}, "User added")) { $("#newEmail").value=""; loadUsers(); }
     $("#addBtn").disabled = false;
@@ -287,7 +308,7 @@ async function loadUsers(){
         <td data-label="Account">${esc(u.email)}${self?' <small>(you)</small>':''}</td>
         <td data-label="Role"><span class="tag ${u.role}">${u.role}</span></td>
         <td data-label="Status"><span class="tag ${u.active?'on':'off'}">${u.active?'active':'disabled'}</span></td>
-        <td data-label="Systems">${u.role==='admin'?'<small>All</small>':`<div class="apps-cell">${APPS.map(a=>`<label><input type="checkbox" data-app="${a.id}" ${u.apps.includes(a.id)?'checked':''}> ${esc(a.name.replace('RCM and ','').replace('RCM ',''))}</label>`).join("")}</div>`}</td>
+        <td data-label="Systems">${u.role==='admin'?'<small>All</small>':`<div class="apps-cell">${appBoxes(u)}</div>`}</td>
         <td class="acts" style="white-space:nowrap">
           <button class="btn sm ghost" data-act="role" ${self?'disabled':''}>${u.role==='admin'?'Make member':'Make admin'}</button>
           <button class="btn sm ghost" data-act="active" ${self?'disabled':''}>${u.active?'Disable':'Enable'}</button>
@@ -303,11 +324,42 @@ async function loadUsers(){
       if (b.dataset.act==="del"){ if(!confirm("Remove "+email+"?")) return; ok = await adminCall("remove",{email},"Removed"); }
       if (ok) loadUsers();
     });
-    tr.querySelectorAll("[data-app]").forEach(c=>c.onchange = () => {
-      const apps = [...tr.querySelectorAll("[data-app]:checked")].map(i=>i.dataset.app);
-      adminCall("update",{email,apps},"Access updated");
+    tr.querySelectorAll("[data-app]").forEach(c=>c.onchange = async () => {
+      const raw = [...tr.querySelectorAll("[data-app]:checked")].map(i=>i.dataset.app);
+      const apps = fixApps(raw, c.dataset.app, c.checked);
+      if (await adminCall("update",{email,apps},"Access updated")) loadUsers();
     });
   });
+}
+
+/* ============ 2b. SIGN-IN HAND-OFF TO SYSTEMS THAT NEED IT (Wine Inventory) ============ */
+function sendTokenToFrame(f){
+  if (!f || !token || !me) return;
+  const a = APPS.find(x => x.url === f.getAttribute("src"));
+  if (!a || !a.auth || !myApps().includes(a)) return;          // only systems marked auth:true get the token
+  try {
+    f.contentWindow.postMessage({ type:"rcm-token", token,
+      user:{ email:me.email, name:me.name, role:me.role, apps:me.apps } }, new URL(a.url).origin);
+  } catch(_) {}
+}
+window.addEventListener("message", e => {
+  const f = $("#main iframe");
+  if (!f || e.source !== f.contentWindow) return;              // must come from the open system's frame
+  if (e.data && e.data.type === "rcm-need-token") sendTokenToFrame(f);
+});
+
+/* Google sign-in tokens last about an hour: renew quietly before they run out. */
+function jwtExp(t){ try { return JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).exp * 1000; } catch(_) { return 0; } }
+function scheduleRefresh(){
+  clearTimeout(refreshTimer);
+  const exp = jwtExp(token); if (!exp) return;
+  refreshTimer = setTimeout(() => {
+    try { google.accounts.id.prompt(); } catch(_) {}
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {                          // no new token arrived and the old one is gone
+      if (jwtExp(token) - Date.now() < 15000) showLogin("Your sign-in expired. Please sign in again.");
+    }, Math.max(1000, exp - Date.now()));
+  }, Math.max(5000, exp - Date.now() - 5*60*1000));
 }
 
 /* ============ 3. INSTALLABLE APP (PWA) ============ */
