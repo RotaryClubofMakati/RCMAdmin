@@ -371,9 +371,10 @@ function scheduleRefresh(){
   const exp = jwtExp(token); if (!exp) return;
   refreshTimer = setTimeout(() => {
     try { google.accounts.id.prompt(); } catch(_) {}
-    // No forced sign-out: if no new token arrives, stay on the page and keep retrying quietly.
     clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(scheduleRefresh, 60*1000);
+    refreshTimer = setTimeout(() => {                          // no new token arrived and the old one is gone
+      if (jwtExp(token) - Date.now() < 15000) showLogin("Your sign-in expired. Please sign in again.");
+    }, Math.max(1000, exp - Date.now()));
   }, Math.max(5000, exp - Date.now() - 5*60*1000));
 }
 
