@@ -162,7 +162,7 @@ const CLIENT_ID = "475258710332-ij24hs1dumfhlc50t5fggkpv6l3c0ec0.apps.googleuser
 
 /* ============ 2. SYSTEMS INSIDE THE PORTAL – add more here anytime ============ */
 const APPS = [
-  { id:"social",   icon:"📣", short:"Social",  name:"RCM Social Media Tracker", desc:"Track the club's social media posts and activity.", url:"https://rotaryclubofmakati.github.io/SocialMedia/" },
+  { id:"social", auth:true, icon:"🎬", short:"Content", name:"RCM Content Tracker", desc:"Content requests, approvals, uploads and thumbnails.", roles:[["admin","Admin"],["approver","Approver"],["requester","Requester"]], url:"https://rotaryclubofmakati.github.io/SocialMedia/" },
   { id:"nametag",  icon:"🏷️", short:"Tags",    name:"RCM Name Tag Maker",       desc:"Create and print member and guest name tags.",       url:"https://rotaryclubofmakati.github.io/Name-Tag-Maker/" },
   { id:"travel",   icon:"🚗", short:"Travel",  name:"RCM and MRCFI Travel Logs",desc:"Travel logs for RCM and MRCFI.",                     url:"https://rotaryclubofmakati.github.io/TravelLog/" },
   { id:"errands",  icon:"📝", short:"Errands", name:"RCM Errands Travel Log",   desc:"Travel log for club errands.",                       url:"https://rotaryclubofmakati.github.io/ErrandsTravelLog/" },
