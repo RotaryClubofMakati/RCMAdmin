@@ -169,6 +169,7 @@ const APPS = [
   { id:"wine", auth:true, edit:true, icon:"🍷", short:"Wine",    name:"RCM Wine Inventory",       desc:"Track and manage the club's wine inventory.",        url:"https://rotaryclubofmakati.github.io/Wine-Inventory/" },
   { id:"bats", auth:true, icon:"📚", short:"BATS",    name:"BATS – Books Across the Seas", desc:"Book inventory, requests, approvals and releases.", url:"https://rotaryclubofmakati.github.io/BATS/",
     roles:[["supervisor","Supervisor"],["warehouse","Warehouse Staff"]], requestLink:"?view=request" },   // <-- set url to your BATS page
+  { id:"dtr", auth:true, def:false, icon:"🗓️", short:"DTR", name:"RCM DTR / Attendance", desc:"Daily time record, late/undertime, overtime and printable attendance summary.", url:"https://rotaryclubofmakati.github.io/DTR/" },
   { id:"rotmaksec",icon:"✅", short:"RotMak",  name:"RotMakSec Portal",         desc:"RotMakSec task manager and dashboard.",              url:"https://rotmaksec-task-manager.web.app/dashboard" }
 ];
 /* ================================================================================ */
@@ -295,7 +296,7 @@ function renderAdmin(main){
         <select id="newRole"><option value="member">Member</option><option value="admin">Admin</option></select>
         <button class="btn" id="addBtn">Add user</button>
       </div>
-      <div class="chk" id="newApps">${APPS.map(a=>a.roles ? roleSel(a, []) : `<label><input type="checkbox" value="${a.id}" checked> ${esc(a.name)}</label>` + (a.edit ? `<label class="editbox"><input type="checkbox" value="${a.id}:edit"> ✏️ can restock</label>` : "")).join("")}</div>
+      <div class="chk" id="newApps">${APPS.map(a=>a.roles ? roleSel(a, []) : `<label><input type="checkbox" value="${a.id}" ${a.def===false?'':'checked'}> ${esc(a.name)}</label>` + (a.edit ? `<label class="editbox"><input type="checkbox" value="${a.id}:edit"> ✏️ can restock</label>` : "")).join("")}</div>
       <p class="note">For <b>BATS</b>, choose a role: <b>Supervisor</b> (approves requests) or <b>Warehouse Staff</b> (prepares and releases books). Admins have full BATS access.</p>
       <p class="note">Only Google accounts on this list can sign in. Admins can open every system and manage this list.<br>✏️ <b>Can restock</b> (Wine Inventory): the account can receive stock, create events and enter usage, and its email is recorded on everything it does. Without it the account can only view and print. Deleting is for admins only.</p>
     </div>
